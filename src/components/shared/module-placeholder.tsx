@@ -9,12 +9,8 @@ export function ModulePlaceholder({
   description,
 }: ModulePlaceholderProps) {
   return (
-    <section className="mx-auto max-w-5xl px-6 py-10">
-      <p className="text-sm font-medium text-muted-foreground">
-        DAB 2.0
-      </p>
-
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">
+    <section className="max-w-5xl">
+      <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
         {title}
       </h1>
 
