@@ -28,7 +28,7 @@ export async function loginAction(formData: FormData) {
     redirect("/login?error=invalid");
   }
 
-  redirect("/cotizaciones");
+  redirect("/inicio");
 }
 
 export async function logoutAction() {

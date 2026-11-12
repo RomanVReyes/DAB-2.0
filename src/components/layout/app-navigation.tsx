@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { mainNavigation } from "@/config/navigation";
+import { authorizedNavigation } from "@/config/navigation";
 import { cn } from "@/lib/utils";
 
 type AppNavigationProps = {
+  permissions: string[];
   orientation?: "vertical" | "horizontal";
 };
 
 export function AppNavigation({
+  permissions,
   orientation = "vertical",
 }: AppNavigationProps) {
   const pathname = usePathname();
@@ -25,7 +27,7 @@ export function AppNavigation({
           : "grid grid-cols-2 sm:flex sm:flex-wrap",
       )}
     >
-      {mainNavigation.map(({ href, label }) => {
+      {authorizedNavigation(permissions).map(({ href, label }) => {
         const isCurrentPage = pathname === href;
         const isActive = isCurrentPage || pathname.startsWith(`${href}/`);
 

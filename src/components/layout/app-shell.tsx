@@ -4,7 +4,7 @@ import Link from "next/link";
 import { dashboardHome } from "@/config/navigation";
 import { AppNavigation } from "./app-navigation";
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, permissions }: { children: ReactNode; permissions: string[] }) {
   return (
     <div className="flex min-h-dvh bg-muted/60">
       <a
@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <p className="mt-8 mb-3 px-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
           Operaciones
         </p>
-        <AppNavigation />
+        <AppNavigation permissions={permissions} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           </div>
           <div className="border-t px-4 py-2 md:hidden">
-            <AppNavigation orientation="horizontal" />
+            <AppNavigation orientation="horizontal" permissions={permissions} />
           </div>
         </header>
 

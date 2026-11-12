@@ -3,6 +3,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { requireAppUser } from "@/server/auth/require-app-user";
+import { obtenerPermisosUsuario } from "@/server/auth/permissions";
 import { logoutAction } from "@/modules/auth/actions/auth.actions";
 
 type DashboardLayoutProps = {
@@ -14,9 +15,10 @@ async function ProtectedDashboard({
   children,
 }: DashboardLayoutProps) {
   const usuario = await requireAppUser();
+  const permissions = await obtenerPermisosUsuario();
 
   return (
-    <AppShell>
+    <AppShell permissions={permissions}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium">
