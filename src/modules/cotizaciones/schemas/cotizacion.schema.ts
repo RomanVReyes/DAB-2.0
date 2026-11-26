@@ -4,16 +4,30 @@ const decimal = z
   .string()
   .regex(/^\d{1,5}(\.\d{1,2})?$/, "Usa un número con máximo dos decimales.")
   .refine((v) => Number(v) <= 10000, "El máximo es 10,000.");
-export const partidaSchema = z.object({
-  id: z.uuid().optional(),
-  concepto_id: z.uuid("Selecciona un concepto."),
-  tarifa_id: z.uuid("Selecciona una tarifa vigente."),
-  cantidad: decimal.refine(
-    (v) => Number(v) > 0,
-    "La cantidad debe ser mayor que cero.",
-  ),
-  horas: decimal,
-});
+export const partidaSchema = z
+  .object({
+    id: z.uuid().optional(),
+    concepto_id: z.uuid("Selecciona un concepto."),
+    tarifa_id: z.uuid().optional(),
+    modo: z.enum(["unidad", "hora", "directo"]).optional(),
+    precio: z
+      .string()
+      .regex(/^\d{1,7}(\.\d{1,2})?$/)
+      .refine((v) => Number(v) <= 1000000)
+      .optional(),
+    cantidad: decimal.refine(
+      (v) => Number(v) > 0,
+      "La cantidad debe ser mayor que cero.",
+    ),
+    horas: decimal,
+  })
+  .refine(
+    (p) =>
+      p.modo
+        ? p.precio !== undefined && (p.modo !== "hora" || Number(p.horas) > 0)
+        : !!p.tarifa_id,
+    { message: "Revisa el precio y las horas según el modo de cálculo." },
+  );
 export const cotizacionSchema = z
   .object({
     id: z.uuid().optional(),

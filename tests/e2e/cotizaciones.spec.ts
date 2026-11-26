@@ -43,10 +43,10 @@ test("flujo ADM real: crear, listar, abrir, editar y salir", async ({
   await expect(page).toHaveURL(/\/cotizaciones/);
   await page.getByRole("link", { name: "Nueva cotización" }).click();
   await page
-    .getByLabel("Empresa", { exact: true })
+    .getByRole("combobox", { name: "Empresa", exact: true })
     .selectOption("10000000-0000-4000-8000-000000000001");
   await page
-    .getByLabel("Solicitante", { exact: true })
+    .getByRole("combobox", { name: "Solicitante", exact: true })
     .selectOption("20000000-0000-4000-8000-000000000001");
   const name = `E2E prueba ${Date.now()}`;
   await page.getByLabel("Nombre del proyecto").fill(name);
@@ -69,6 +69,7 @@ test("flujo ADM real: crear, listar, abrir, editar y salir", async ({
   await expect(page.getByRole("status")).toContainText(
     "Borrador guardado correctamente",
   );
+  await page.locator("header summary").click();
   await page.getByRole("button", { name: "Cerrar sesión" }).click();
   await expect(page).toHaveURL(/\/login/);
 });

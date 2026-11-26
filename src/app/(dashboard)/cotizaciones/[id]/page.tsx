@@ -3,25 +3,37 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { exigirPermiso, hasPermission } from "@/server/auth/permissions";
-import { findCotizacion } from "@/modules/cotizaciones/server/cotizaciones.repository";
-import { CotizacionSummary } from "@/modules/cotizaciones/components/cotizacion-summary";
+import {
+  findCotizacion,
+  getCatalogos,
+} from "@/modules/cotizaciones/server/cotizaciones.repository";
+import { CotizacionForm } from "@/modules/cotizaciones/components/cotizacion-form";
+import { HistorialCotizacion } from "@/modules/cotizaciones/components/historial";
+import { Seguimiento } from "@/modules/cotizaciones/components/seguimiento";
 import { CotizacionStatus } from "@/modules/cotizaciones/components/cotizacion-status";
-import { importe } from "@/modules/cotizaciones/lib/importes";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-type Props = { params: Promise<{ id: string }> };
-async function Contenido({ params }: Props) {
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ vista?: string }>;
+};
+async function Contenido({ params, searchParams }: Props) {
   await exigirPermiso("cotizaciones.ver");
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const cot = await findCotizacion(id);
   if (!cot) notFound();
   const editable =
-    cot.estado === "borrador" && (await hasPermission("cotizaciones.editar"));
+    !cot.bloqueado_en && (await hasPermission("cotizaciones.editar"));
+  const historial = (await searchParams).vista === "historial";
+  const [catalogos, permitido, crear] = await Promise.all([
+    getCatalogos(),
+    hasPermission("cotizaciones.seguimiento"),
+    hasPermission("cotizaciones.crear"),
+  ]);
   return (
     <div className="space-y-6">
       <Link className="text-sm underline" href="/cotizaciones">
-        ← Cotizaciones
+        ← Volver a cotizaciones
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -32,108 +44,72 @@ async function Contenido({ params }: Props) {
             {cot.proyecto}
           </h1>
           <div className="mt-3">
-            <CotizacionStatus estado={cot.estado} />
+            <CotizacionStatus estado={cot.estado} />{" "}
+            {cot.es_patrocinio && cot.estado !== "patrocinio" && (
+              <CotizacionStatus estado="patrocinio" />
+            )}
           </div>
         </div>
-        {editable && (
-          <Link
-            className={buttonVariants({ className: "min-h-11" })}
-            href={`/cotizaciones/${id}/editar`}
-          >
-            Editar borrador
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {crear && (
+            <Link
+              className={buttonVariants({
+                variant: "outline",
+                className: "min-h-11",
+              })}
+              href={"/cotizaciones/nueva?copiar=" + id}
+            >
+              Duplicar
+            </Link>
+          )}
+          {editable && (
+            <Link
+              className={buttonVariants({ className: "min-h-11" })}
+              href={`/cotizaciones/${id}/editar`}
+            >
+              {cot.estado === "borrador"
+                ? "Editar borrador"
+                : "Editar presupuesto"}
+            </Link>
+          )}
+        </div>
       </div>
-      <Card>
-        <CardContent>
-          <dl className="grid gap-4 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">Cliente</dt>
-              <dd>{cot.empresas.nombre}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Solicitante</dt>
-              <dd>{cot.solicitantes.nombre}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Creado por</dt>
-              <dd>{cot.creador_nombre}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Creación</dt>
-              <dd>
-                {new Date(cot.creado_en).toLocaleString("es-MX", {
-                  timeZone: "America/Tijuana",
-                })}
-              </dd>
-            </div>
-            <div className="sm:col-span-2">
-              <dt className="text-muted-foreground">Especificaciones</dt>
-              <dd className="mt-1 whitespace-pre-wrap break-words">
-                {cot.especificaciones || "Sin especificaciones adicionales."}
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
-      <div className="overflow-x-auto rounded-xl border bg-background">
-        <table className="w-full min-w-[650px] text-left text-sm">
-          <caption className="p-4 text-left font-semibold">
-            Partidas del presupuesto
-          </caption>
-          <thead className="border-y text-xs text-muted-foreground">
-            <tr>
-              {[
-                "Concepto",
-                "Cantidad",
-                "Unidad",
-                "Horas",
-                "Precio unitario",
-                "Subtotal",
-              ].map((t) => (
-                <th className="p-3" key={t} scope="col">
-                  {t}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {cot.partidas.map((p) => (
-              <tr className="border-b last:border-0" key={p.id}>
-                <td className="p-3">{p.concepto_nombre}</td>
-                <td className="p-3">{importe(p.cantidad)}</td>
-                <td className="p-3">{p.unidad}</td>
-                <td className="p-3">{importe(p.horas)}</td>
-                <td className="p-3">{importe(p.precio_unitario)}</td>
-                <td className="p-3 font-semibold">{importe(p.subtotal)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <CotizacionSummary total={cot.importe} horas={cot.horas} />
-      <Card>
-        <CardContent>
-          <h2 className="font-semibold">Historial de cambios</h2>
-          <ol className="mt-4 space-y-3 text-sm">
-            {cot.cotizacion_historial.map((h) => (
-              <li key={h.id} className="border-l-2 pl-3">
-                <p>
-                  Versión {h.version} ·{" "}
-                  {h.accion === "creada" ? "Creada" : "Editada"} por{" "}
-                  {h.usuario_nombre}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {new Date(h.creado_en).toLocaleString("es-MX", {
-                    timeZone: "America/Tijuana",
-                  })}{" "}
-                  · Importe {importe(h.importe)}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
+      <nav
+        aria-label="Secciones de la cotización"
+        className="flex gap-4 border-b pb-2 text-sm"
+      >
+        <Link
+          className={!historial ? "font-bold underline" : ""}
+          href={"/cotizaciones/" + id}
+        >
+          General
+        </Link>
+        <Link
+          className={historial ? "font-bold underline" : ""}
+          href={"/cotizaciones/" + id + "?vista=historial"}
+        >
+          Historial
+        </Link>
+      </nav>
+      {historial ? (
+        <HistorialCotizacion eventos={cot.cotizacion_historial} />
+      ) : (
+        <>
+          <p className="text-sm">
+            Creada por {cot.creador_nombre} ·{" "}
+            {new Date(cot.creado_en).toLocaleDateString("es-MX", {
+              timeZone: "America/Tijuana",
+            })}
+          </p>
+          <CotizacionForm
+            readOnly
+            initial={cot}
+            catalogos={catalogos}
+            today={cot.creado_en.slice(0, 10)}
+          />
+          <Seguimiento key={cot.version} cot={cot} permitido={permitido} />
+        </>
+      )}
     </div>
   );
 }
