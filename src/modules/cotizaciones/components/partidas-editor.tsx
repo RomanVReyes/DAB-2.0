@@ -4,6 +4,8 @@ import type { Catalogos } from "../types/cotizacion.types";
 import { importe, subtotal } from "../lib/importes";
 
 export type EditablePartida = {
+  modo: import("../types/cotizacion.types").Modo;
+  area?: string;
   key: string;
   id?: string;
   concepto_id: string;
@@ -14,6 +16,8 @@ export type EditablePartida = {
   horas: string;
   precio: string;
 };
+export const factor = (p: EditablePartida) =>
+  p.modo === "unidad" ? p.cantidad : p.modo === "hora" ? p.horas : "1";
 export const fieldClass =
   "mt-1 min-h-11 w-full rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-ring disabled:bg-muted";
 export function PartidasEditor({
@@ -21,22 +25,15 @@ export function PartidasEditor({
   onChange,
   catalogos,
   today,
+  readOnly = false,
 }: {
   partidas: EditablePartida[];
   onChange: (p: EditablePartida[]) => void;
   catalogos: Catalogos;
   today: string;
+  readOnly?: boolean;
 }) {
-  const available = catalogos.conceptos.filter(
-    (c) =>
-      c.activo &&
-      catalogos.tarifas.some(
-        (t) =>
-          t.concepto_id === c.id &&
-          t.vigente_desde <= today &&
-          (!t.vigente_hasta || t.vigente_hasta >= today),
-      ),
-  );
+  const available = catalogos.conceptos.filter((c) => c.activo);
   function update(index: number, change: Partial<EditablePartida>) {
     onChange(partidas.map((p, i) => (i === index ? { ...p, ...change } : p)));
   }
@@ -46,29 +43,32 @@ export function PartidasEditor({
         <h2 id="partidas-title" className="text-lg font-semibold">
           Partidas
         </h2>
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11"
-          disabled={partidas.length >= 100}
-          onClick={() =>
-            onChange([
-              ...partidas,
-              {
-                key: crypto.randomUUID(),
-                concepto_id: "",
-                tarifa_id: "",
-                nombre: "",
-                unidad: "",
-                cantidad: "1",
-                horas: "0",
-                precio: "0",
-              },
-            ])
-          }
-        >
-          Agregar partida
-        </Button>
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={partidas.length >= 100}
+            onClick={() =>
+              onChange([
+                ...partidas,
+                {
+                  key: crypto.randomUUID(),
+                  modo: "directo",
+                  concepto_id: "",
+                  tarifa_id: "",
+                  nombre: "",
+                  unidad: "",
+                  cantidad: "1",
+                  horas: "0",
+                  precio: "0",
+                },
+              ])
+            }
+          >
+            Agregar partida
+          </Button>
+        )}
       </div>
       {partidas.length === 0 && (
         <p className="rounded-xl border border-dashed p-6 text-sm">
@@ -81,6 +81,34 @@ export function PartidasEditor({
             Partida {index + 1}
           </legend>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {!readOnly && !p.id && (
+              <label className="text-sm">
+                Área
+                <select
+                  className={fieldClass}
+                  value={p.area ?? ""}
+                  onChange={(e) =>
+                    update(index, {
+                      area: e.target.value,
+                      concepto_id: "",
+                      tarifa_id: "",
+                      precio: "",
+                      unidad: "",
+                      nombre: "",
+                    })
+                  }
+                >
+                  <option value="">Todas las áreas</option>
+                  {Array.from(
+                    new Map(available.map((c) => [c.area_id, c.areas.nombre])),
+                  ).map(([id, nombre]) => (
+                    <option key={id} value={id}>
+                      {nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="text-sm lg:col-span-2">
               Concepto
               <select
@@ -102,45 +130,81 @@ export function PartidasEditor({
                     tarifa_id: t?.id ?? "",
                     nombre: c?.nombre ?? "",
                     unidad: c?.unidad ?? "",
-                    precio: String(t?.precio ?? 0),
+                    precio: String(t?.precio ?? ""),
+                    modo: /^horas?$/i.test(c?.unidad ?? "") ? "hora" : "unidad",
                   });
                 }}
               >
                 <option value="">Selecciona un concepto</option>
                 {p.id ? (
-                  <option value={p.concepto_id}>
-                    {p.nombre} · tarifa conservada
-                  </option>
+                  <option value={p.concepto_id}>{p.nombre}</option>
                 ) : (
-                  available.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}
-                    </option>
-                  ))
+                  available
+                    .filter((c) => !p.area || c.area_id === p.area)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.areas.nombre} · {c.nombre}
+                      </option>
+                    ))
                 )}
               </select>
             </label>
             <label className="text-sm">
-              Cantidad {p.unidad && `(${p.unidad})`}
-              <input
-                aria-label={`Cantidad ${index + 1}`}
+              Cálculo
+              <select
                 className={fieldClass}
-                type="number"
-                min="0.01"
-                max="10000"
-                step="0.01"
-                required
-                value={p.cantidad}
-                onChange={(e) => update(index, { cantidad: e.target.value })}
-              />
+                value={p.modo}
+                onChange={(e) =>
+                  update(index, {
+                    modo: e.target.value as EditablePartida["modo"],
+                  })
+                }
+              >
+                <option value="directo">Importe directo</option>
+                <option value="hora">Por hora</option>
+                <option value="unidad">Por unidad</option>
+              </select>
             </label>
             <label className="text-sm">
-              Horas de esta partida
+              {p.modo === "directo"
+                ? "Importe negociado"
+                : p.modo === "hora"
+                  ? "Precio por hora"
+                  : "Precio por unidad"}
               <input
-                aria-label={`Horas ${index + 1}`}
                 className={fieldClass}
                 type="number"
                 min="0"
+                max="1000000"
+                step="0.01"
+                required
+                value={p.precio}
+                onChange={(e) => update(index, { precio: e.target.value })}
+              />
+            </label>
+            {p.modo === "unidad" && (
+              <label className="text-sm">
+                Cantidad {p.unidad && `(${p.unidad})`}
+                <input
+                  aria-label={`Cantidad ${index + 1}`}
+                  className={fieldClass}
+                  type="number"
+                  min="0.01"
+                  max="10000"
+                  step="0.01"
+                  required
+                  value={p.cantidad}
+                  onChange={(e) => update(index, { cantidad: e.target.value })}
+                />
+              </label>
+            )}
+            <label className="text-sm">
+              Horas presupuestadas
+              <input
+                aria-label={`Horas presupuestadas ${index + 1}`}
+                className={fieldClass}
+                type="number"
+                min={p.modo === "hora" ? "0.01" : "0"}
                 max="10000"
                 step="0.01"
                 required
@@ -151,27 +215,36 @@ export function PartidasEditor({
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
             <span>
-              Precio unitario: <strong>{importe(p.precio)}</strong>
+              {p.modo === "directo"
+                ? "Importe directo"
+                : (p.modo === "hora"
+                    ? p.horas + " h"
+                    : p.cantidad + " unidades") +
+                  " × " +
+                  importe(p.precio || 0)}
             </span>
             <span>
               Subtotal:{" "}
-              <strong>{importe(subtotal(p.cantidad, p.precio))}</strong>
+              <strong>{importe(subtotal(factor(p), p.precio))}</strong>
             </span>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label={`Eliminar partida ${index + 1}`}
-              onClick={() => onChange(partidas.filter((_, i) => i !== index))}
-            >
-              Eliminar
-            </Button>
+            {!readOnly && (
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label={`Eliminar partida ${index + 1}`}
+                onClick={() => onChange(partidas.filter((_, i) => i !== index))}
+              >
+                Eliminar
+              </Button>
+            )}
           </div>
         </fieldset>
       ))}
-      <p className="text-xs text-muted-foreground">
-        El precio proviene de la tarifa vigente. Las horas son el presupuesto
-        total de cada partida; no multiplican el importe.
-      </p>
+      {!readOnly && (
+        <p className="text-xs text-muted-foreground">
+          Puedes editar la tarifa sugerida o capturar un importe directo.
+        </p>
+      )}
     </section>
   );
 }

@@ -2,8 +2,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { importe } from "../lib/importes";
 export function CotizacionSummary({
   total,
+  areas,
   horas,
 }: {
+  areas: { nombre: string; importe: string }[];
   total: string | number;
   horas: string | number;
 }) {
@@ -11,6 +13,12 @@ export function CotizacionSummary({
     <Card>
       <CardContent className="space-y-3" aria-live="polite">
         <h2 className="font-semibold">Resumen del presupuesto</h2>
+        {areas.map((a) => (
+          <p key={a.nombre} className="flex justify-between gap-3 text-sm">
+            <span>{a.nombre}</span>
+            <span>{importe(a.importe)}</span>
+          </p>
+        ))}
         <p className="flex justify-between gap-4">
           <span>Horas presupuestadas</span>
           <strong>{importe(horas)}</strong>
@@ -20,8 +28,7 @@ export function CotizacionSummary({
           <strong className="text-xl">{importe(total)}</strong>
         </p>
         <p className="text-xs text-muted-foreground">
-          Sin impuestos ni descuentos. Moneda y reglas comerciales pendientes de
-          validación con Studio.
+          Importes sin impuestos ni descuentos.
         </p>
       </CardContent>
     </Card>

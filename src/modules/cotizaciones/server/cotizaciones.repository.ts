@@ -9,7 +9,11 @@ export async function getCatalogos(): Promise<Catalogos> {
   const results = await Promise.all([
     db.from("empresas").select("*").order("nombre"),
     db.from("solicitantes").select("*").order("nombre"),
-    db.from("conceptos").select("*").order("nombre"),
+    db
+      .from("conceptos")
+      .select("*,areas!inner(nombre,activo)")
+      .eq("areas.activo", true)
+      .order("nombre"),
     db.from("tarifas").select("*").order("vigente_desde", { ascending: false }),
     db.from("tipos_cotizacion").select("*").order("nombre"),
     db.from("sedes").select("*").order("nombre"),
@@ -28,6 +32,7 @@ export async function getCatalogos(): Promise<Catalogos> {
   } as Catalogos;
 }
 export type ListFilters = {
+  mes: string;
   q: string;
   empresa: string;
   estado: string;
@@ -36,33 +41,31 @@ export type ListFilters = {
 };
 export async function listCotizaciones(filters: ListFilters) {
   const db = await createClient();
-  let query = db
-    .from("cotizaciones")
-    .select(
-      "id,folio,codigo,empresa_id,proyecto,estado,importe,horas,creado_en,empresas(nombre),solicitantes(nombre)",
-      { count: "exact" },
-    );
-  if (filters.q) {
-    const safe = filters.q.replace(/[^\p{L}\p{N}\s-]/gu, "").slice(0, 100);
-    if (safe)
-      query = query.or(`codigo.ilike.%${safe}%,proyecto.ilike.%${safe}%`);
-  }
-  if (filters.empresa) query = query.eq("empresa_id", filters.empresa);
-  if (filters.estado) query = query.eq("estado", filters.estado);
-  const { data, count, error } = await query
-    .order("creado_en", { ascending: filters.order === "asc" })
-    .order("id")
-    .range((filters.page - 1) * 20, filters.page * 20 - 1);
-  if (error)
-    throw new CotizacionError("No fue posible consultar las cotizaciones.");
-  return { rows: data as unknown as Cotizacion[], count: count ?? 0 };
+  const { data, error } = await db.rpc("cotizaciones_periodo", {
+    p_mes: filters.mes + "-01",
+    p_buscar: filters.q,
+    p_empresa: filters.empresa || null,
+    p_estado: filters.estado,
+    p_pagina: filters.page,
+    p_asc: filters.order === "asc",
+  });
+  if (error) throw new CotizacionError("No fue posible consultar el periodo.");
+  return data as {
+    rows: Cotizacion[];
+    count: number;
+    cotizado: number;
+    pendientes: number;
+    aprobado: number;
+    facturado: number;
+    cobrado: number;
+  };
 }
 export async function findCotizacion(id: string): Promise<Detalle | null> {
   const db = await createClient();
   const { data, error } = await db
     .from("cotizaciones")
     .select(
-      "*,empresas(nombre),solicitantes(nombre),partidas(*),cotizacion_historial(*)",
+      "*,empresas(nombre),solicitantes(nombre),partidas(*),cotizacion_historial(*),cotizacion_documentos(*)",
     )
     .eq("id", id)
     .maybeSingle();

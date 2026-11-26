@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
@@ -18,15 +19,23 @@ async function Contenido({ params }: Props) {
     getCatalogos(),
   ]);
   if (!initial) notFound();
-  if (initial.estado !== "borrador") redirect(`/cotizaciones/${id}`);
+  if (initial.bloqueado_en) redirect(`/cotizaciones/${id}`);
   return (
     <div className="space-y-6">
+      <Link className="text-sm underline" href="/cotizaciones">
+        ← Volver a cotizaciones
+      </Link>
       <div>
-        <h1 className="text-2xl font-semibold">Editar borrador</h1>
+        <h1 className="text-2xl font-semibold">{initial.proyecto}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {initial.codigo} · Versión {initial.version}
         </p>
       </div>
+      <nav className="flex gap-4 text-sm">
+        <strong>General</strong>
+        <Link href={`/cotizaciones/${id}?vista=historial`}>Historial</Link>
+        <Link href={"/cotizaciones/" + id + "#seguimiento"}>Seguimiento</Link>
+      </nav>
       <CotizacionForm
         initial={initial}
         catalogos={catalogos}

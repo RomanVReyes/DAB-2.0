@@ -3,6 +3,7 @@ import { dashboardHome } from "./src/config/navigation";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  experimental: { serverActions: { bodySizeLimit: "6mb" } },
   cacheComponents: true,
   partialPrefetching: true,
   redirects() {

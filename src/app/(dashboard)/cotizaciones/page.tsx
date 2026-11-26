@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { cotizacionStatuses } from "@/modules/cotizaciones/constants/cotizacion-statuses";
+import { importe } from "@/modules/cotizaciones/lib/importes";
 import { z } from "zod";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -22,9 +24,18 @@ async function Contenido({ searchParams }: Props) {
   const one = (key: string) =>
     typeof params[key] === "string" ? (params[key] as string) : "";
   const filters: ListFilters = {
+    mes: /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(one("mes"))
+      ? one("mes")
+      : new Intl.DateTimeFormat("sv-SE", {
+          timeZone: "America/Tijuana",
+          year: "numeric",
+          month: "2-digit",
+        }).format(new Date()),
     q: one("q").slice(0, 100),
     empresa: z.uuid().safeParse(one("empresa")).success ? one("empresa") : "",
-    estado: one("estado") === "borrador" ? "borrador" : "",
+    estado: Object.hasOwn(cotizacionStatuses, one("estado"))
+      ? one("estado")
+      : "",
     page: Math.min(100000, Math.max(1, Number.parseInt(one("page"), 10) || 1)),
     order: one("order") === "asc" ? "asc" : "desc",
   };
@@ -34,7 +45,7 @@ async function Contenido({ searchParams }: Props) {
     obtenerPermisosUsuario(),
   ]);
   const pageLink = (page: number) =>
-    `/cotizaciones?${new URLSearchParams({ q: filters.q, empresa: filters.empresa, estado: filters.estado, order: filters.order, page: String(page) })}`;
+    `/cotizaciones?${new URLSearchParams({ mes: filters.mes, q: filters.q, empresa: filters.empresa, estado: filters.estado, order: filters.order, page: String(page) })}`;
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -65,6 +76,20 @@ async function Contenido({ searchParams }: Props) {
           </Link>
         </p>
       )}
+      <dl className="grid grid-cols-2 gap-3 xl:grid-cols-5">
+        {Object.entries({
+          "Cotizado en el mes": importe(result.cotizado),
+          "Pendientes al cierre": result.pendientes,
+          "Aprobado en el mes": importe(result.aprobado),
+          Facturado: importe(result.facturado),
+          Cobrado: importe(result.cobrado),
+        }).map(([label, value]) => (
+          <div className="rounded-xl border bg-background p-3" key={label}>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="text-lg font-bold tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
       <CotizacionesFilters empresas={catalogos.empresas} filters={filters} />
       <p className="text-sm text-muted-foreground">
         {result.count} cotizaciones encontradas · Importes preliminares sin

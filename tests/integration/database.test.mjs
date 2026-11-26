@@ -50,13 +50,19 @@ async function save(user, data = input, id = null, version = null) {
   return result.rows[0].id;
 }
 let created;
+let legado;
 before(async () => {
-  await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE SCHEMA auth;
+  await db.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE SCHEMA auth; CREATE SCHEMA storage;
+    CREATE TABLE storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+    CREATE TABLE storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);
+    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+    GRANT USAGE ON SCHEMA storage TO authenticated;
+    GRANT SELECT,INSERT ON storage.objects TO authenticated;
     CREATE TABLE auth.users(id uuid PRIMARY KEY);
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     GRANT USAGE ON SCHEMA auth TO authenticated,anon; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated,anon;`);
   for (const file of (await readdir("supabase/migrations"))
-    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => f.endsWith(".sql") && !f.endsWith("_cotizaciones_v2.sql"))
     .sort())
     await db.exec(await readFile(`supabase/migrations/${file}`, "utf8"));
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
@@ -80,6 +86,31 @@ before(async () => {
   await db.exec(
     "INSERT INTO public.rol_permisos SELECT r.id,p.id FROM public.roles r,public.permisos p WHERE r.codigo='AG' AND p.codigo='cotizaciones.ver'",
   );
+  const id = await save(adm, { ...input, proyecto: "Borrador anterior a V2" });
+  const consultar = async () => ({
+    cabecera: (
+      await asUser(
+        adm,
+        "select codigo,importe,horas,estado,version from public.cotizaciones where id=$1",
+        [id],
+      )
+    ).rows[0],
+    partidas: (
+      await asUser(
+        adm,
+        "select id,tarifa_id,precio_unitario,subtotal,horas,cantidad from public.partidas where cotizacion_id=$1 order by orden",
+        [id],
+      )
+    ).rows,
+  });
+  const original = await consultar();
+  await db.exec(
+    await readFile(
+      "supabase/migrations/20261126090637_cotizaciones_v2.sql",
+      "utf8",
+    ),
+  );
+  legado = { id, original, migrado: await consultar() };
 });
 after(async () => db.close());
 
@@ -353,4 +384,233 @@ test("todas las tablas comerciales tienen RLS y no permiten DML directo", async 
   );
   assert.equal(priv.can_insert, false);
   assert.equal(priv.can_exec, false);
+});
+
+const track = (user, id, version, data) =>
+  asUser(user, "select public.seguir_cotizacion($1,$2,$3)", [
+    id,
+    version,
+    JSON.stringify(data),
+  ]);
+test("V2 calcula importes negociados con y sin horas y conserva cada ID", async () => {
+  const partidas = ["directo", "hora", "unidad"].map((modo) => ({
+    ...input.partidas[0],
+    tarifa_id: undefined,
+    modo,
+    precio: "10.25",
+    cantidad: "1.25",
+    horas: modo === "directo" ? "0" : "2.5",
+  }));
+  const id = await save(adm, { ...input, partidas });
+  const rows = (
+    await asUser(
+      adm,
+      "select * from public.partidas where cotizacion_id=$1 order by orden",
+      [id],
+    )
+  ).rows;
+  assert.deepEqual(
+    rows.map((r) => r.subtotal),
+    ["10.25", "25.63", "12.81"],
+  );
+  await save(
+    adm,
+    {
+      ...input,
+      partidas: partidas.map((p, i) => ({
+        ...p,
+        id: rows[i].id,
+        precio: "11.20",
+      })),
+    },
+    id,
+    1,
+  );
+  const hist = (
+    await asUser(
+      adm,
+      "select resumen from public.cotizacion_historial where cotizacion_id=$1 order by version",
+      [id],
+    )
+  ).rows;
+  assert.equal(hist[0].resumen.partidas[0].precio, 10.25);
+  assert.equal(hist[1].resumen.partidas[0].precio, 11.2);
+  assert.equal(hist[0].resumen.partidas[0].id, hist[1].resumen.partidas[0].id);
+});
+test("V2 bloquea presupuesto, exige evidencia y solo genera un alta operativa", async () => {
+  const id = await save(adm, {
+    ...input,
+    partidas: [
+      {
+        ...input.partidas[0],
+        tarifa_id: undefined,
+        modo: "directo",
+        precio: "80",
+      },
+    ],
+  });
+  await assert.rejects(track(tm, id, 1, { estado: "aprobada" }));
+  await assert.rejects(track(viewer, id, 1, { estado: "aprobada" }));
+  await assert.rejects(track(adm, id, 1, { estado: "rechazada" }));
+  await track(adm, id, 1, { estado: "aprobada" });
+  await assert.rejects(save(adm, input, id, 2));
+  await assert.rejects(track(adm, id, 2, { estado: "borrador" }));
+  const queue = () =>
+    db.query(
+      "select carga from private.project_monitor_pendientes where cotizacion_id=$1",
+      [id],
+    );
+  assert.equal((await queue()).rows.length, 0);
+  await assert.rejects(
+    track(adm, id, 2, { tipo: "po", enlace: "https://example.org/fake" }),
+  );
+  const path = id + "/" + adm + "/2/po/" + crypto.randomUUID() + ".pdf";
+  await asUser(
+    adm,
+    "insert into storage.objects(bucket_id,name) values('cotizaciones-po',$1)",
+    [path],
+  );
+  await track(adm, id, 2, { tipo: "po", objeto: path });
+  assert.equal(
+    (await asUser(tm, "select * from storage.objects where name=$1", [path]))
+      .rows.length,
+    0,
+  );
+  assert.equal(
+    (await asUser(adm, "select * from storage.objects where name=$1", [path]))
+      .rows.length,
+    1,
+  );
+  await track(adm, id, 3, { estado: "facturada" });
+  await track(adm, id, 4, { estado: "pagada" });
+  await track(adm, id, 5, {
+    tipo: "pago",
+    enlace: "https://drive.google.com/file/d/prueba/view",
+  });
+  assert.equal((await queue()).rows.length, 1);
+  assert.equal((await queue()).rows[0].carga.version_aprobada, 2);
+  await assert.rejects(
+    track(adm, id, 5, { numero_po: "Tardia" }),
+    (e) => e.code === "40001",
+  );
+});
+test("V2 conserva pendiente durante tres meses y separa cotizado de aprobado", async () => {
+  const id = await save(adm, {
+    ...input,
+    proyecto: "Periodo aislado",
+    partidas: [
+      {
+        ...input.partidas[0],
+        modo: "directo",
+        tarifa_id: undefined,
+        precio: "80",
+      },
+    ],
+  });
+  await track(adm, id, 1, { estado: "pendiente" });
+  await track(adm, id, 2, { estado: "aprobada" });
+  await db.query(
+    "update public.cotizaciones set creado_en='2025-01-15',resuelto_en='2025-03-15',aprobado_en='2025-03-15' where id=$1",
+    [id],
+  );
+  await db.query(
+    "update public.cotizacion_historial set creado_en=case when version<=2 then date '2025-01-15' else date '2025-03-15' end where cotizacion_id=$1",
+    [id],
+  );
+  const periodo = async (mes) =>
+    (
+      await asUser(
+        adm,
+        "select public.cotizaciones_periodo($1,'Periodo aislado',null,'',1,false) as r",
+        [mes],
+      )
+    ).rows[0].r;
+  const a = await periodo("2025-01-01"),
+    b = await periodo("2025-02-01"),
+    c = await periodo("2025-03-01");
+  assert.equal(a.cotizado, 80);
+  assert.equal(a.pendientes, 1);
+  assert.equal(b.rows[0].arrastre, true);
+  assert.equal(b.cotizado, 0);
+  assert.equal(b.pendientes, 1);
+  assert.equal(c.aprobado, 80);
+  assert.equal(c.rows[0].estado, "aprobada");
+  assert.equal((await periodo("2025-04-01")).count, 0);
+});
+
+test("patrocinio conserva su clasificación al aprobarse y exige evidencia para operar", async () => {
+  const id = await save(adm, {
+    ...input,
+    partidas: [
+      {
+        ...input.partidas[0],
+        modo: "directo",
+        precio: "0",
+        tarifa_id: undefined,
+      },
+    ],
+  });
+  await track(adm, id, 1, { estado: "patrocinio" });
+  await assert.rejects(save(adm, input, id, 2));
+  await track(adm, id, 2, {
+    estado: "aprobada_sin_po",
+    tipo: "aprobacion",
+    enlace: "https://drive.google.com/file/d/demostracion/view",
+  });
+  const row = (
+    await asUser(adm, "select * from public.cotizaciones where id=$1", [id])
+  ).rows[0];
+  assert.equal(row.es_patrocinio, true);
+  assert.ok(row.aprobado_en);
+  assert.equal(
+    (
+      await db.query(
+        "select * from private.project_monitor_pendientes where cotizacion_id=$1",
+        [id],
+      )
+    ).rows.length,
+    1,
+  );
+});
+test("TM no accede a documentos, indicadores ni RPC de seguimiento", async () => {
+  const path = created + "/" + tm + "/1/po/" + crypto.randomUUID() + ".pdf";
+  await assert.rejects(
+    asUser(
+      tm,
+      "insert into storage.objects(bucket_id,name) values('cotizaciones-po',$1)",
+      [path],
+    ),
+    (e) => e.code === "42501",
+  );
+  assert.equal(
+    (await asUser(tm, "select * from public.cotizacion_documentos")).rows
+      .length,
+    0,
+  );
+  assert.equal(
+    (
+      await asUser(
+        tm,
+        "select public.cotizaciones_periodo(current_date,'',null,'',1,false) datos",
+      )
+    ).rows[0].datos.count,
+    0,
+  );
+  await assert.rejects(
+    asUser(tm, "delete from public.cotizacion_historial"),
+    (e) => e.code === "42501",
+  );
+});
+
+test("migración sobre un borrador V1 conserva precios, horas e identificadores", async () => {
+  assert.deepEqual(legado.migrado, legado.original);
+  const event = (
+    await asUser(
+      adm,
+      "select resumen from public.cotizacion_historial where cotizacion_id=$1",
+      [legado.id],
+    )
+  ).rows[0];
+  assert.equal(event.resumen.partidas.length, 2);
+  assert.equal(event.resumen.proyecto, "Borrador anterior a V2");
 });

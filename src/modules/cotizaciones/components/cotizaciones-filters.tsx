@@ -1,3 +1,4 @@
+import { cotizacionStatuses } from "../constants/cotizacion-statuses";
 import { Button } from "@/components/ui/button";
 import type { Empresa } from "../types/cotizacion.types";
 import type { ListFilters } from "../server/cotizaciones.repository";
@@ -11,14 +12,24 @@ export function CotizacionesFilters({
   const cls = "min-h-11 rounded-lg border bg-background px-3 text-sm";
   return (
     <form className="flex flex-wrap items-end gap-3" action="/cotizaciones">
+      <label className="flex flex-col gap-1 text-xs">
+        Periodo
+        <input
+          className={cls}
+          type="month"
+          required
+          name="mes"
+          defaultValue={filters.mes}
+        />
+      </label>
       <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs">
-        Buscar código o proyecto
+        Buscar cotización
         <input
           className={cls}
           name="q"
           defaultValue={filters.q}
           maxLength={100}
-          placeholder="Código o proyecto…"
+          placeholder="Código, cliente, proyecto o solicitante"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
@@ -40,7 +51,11 @@ export function CotizacionesFilters({
         Estado
         <select className={cls} name="estado" defaultValue={filters.estado}>
           <option value="">Todos</option>
-          <option value="borrador">Borrador</option>
+          {Object.entries(cotizacionStatuses).map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
         </select>
       </label>
       <label className="flex flex-col gap-1 text-xs">
