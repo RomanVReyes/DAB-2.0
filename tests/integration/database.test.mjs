@@ -106,7 +106,7 @@ before(async () => {
   const original = await consultar();
   await db.exec(
     await readFile(
-      "supabase/migrations/20261126090637_cotizaciones_v2.sql",
+      "supabase/migrations/20261126144225_cotizaciones_v2.sql",
       "utf8",
     ),
   );

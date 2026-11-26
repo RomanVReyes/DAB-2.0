@@ -1,6 +1,6 @@
 # Cotizaciones V2
 
-La rama de implementación es `codex/cotizaciones-v2`. Parte de la primera entrega, commit `8ebbc2b`. El código V2 necesita la migración adicional antes de servir tráfico. La verificación local usa datos ficticios. En el proyecto Supabase DAB 2.0, `bxcxxhcnqoedfhhcyrlp`, se verificaron las tres migraciones V1 y tres presupuestos existentes. La revisión automática bloqueó el despliegue de V2 por falta de autorización explícita para modificar ese remoto. La carga de catálogos y las pruebas con escrituras remotas están fuera de los resultados locales.
+La rama de implementación es `codex/cotizaciones-v2`. Parte de la primera entrega, commit `8ebbc2b`. La migración V2 se aplicó con autorización al proyecto Supabase DAB 2.0, `bxcxxhcnqoedfhhcyrlp`. El conector registró la versión `20261126144225`. El archivo originalmente generado con la versión `20261126090637` se renombró para coincidir con el historial remoto. La consulta de control conservó tres cotizaciones, sus horas, sus importes y las huellas de los presupuestos y partidas. El bucket privado y las instantáneas iniciales quedaron creados. La comprobación de permisos de solo lectura pasó. Las pruebas autenticadas con escrituras y la comprobación real de subida y descarga siguen pendientes.
 
 ## Captura y precios
 
@@ -60,13 +60,13 @@ La clave primaria es la cotización. `carga` contiene versión del contrato, ID 
 
 ## Archivos y despliegue
 
-- `supabase/migrations/20261126090637_cotizaciones_v2.sql` amplía cabecera, partidas e historial, introduce documentos, cola privada, bucket y políticas, y crea las RPC de seguimiento y consulta mensual. Se conserva el esquema base y las tres migraciones anteriores.
+- `supabase/migrations/20261126144225_cotizaciones_v2.sql` amplía cabecera, partidas e historial, introduce documentos, cola privada, bucket y políticas, y crea las RPC de seguimiento y consulta mensual. Se conserva el esquema base y las tres migraciones anteriores.
 - `src/modules/cotizaciones/{schemas,types,constants,server}` contiene la validación, modelos, estados y repositorio adaptados. En `components` se actualizaron formulario, editor, resumen, estado, filtros y tabla, y se añadieron seguimiento e historial.
 - `src/modules/cotizaciones/actions/seguimiento.actions.ts` gestiona documentos y seguimiento. La ruta nueva `src/app/(dashboard)/cotizaciones/[id]/documentos/[doc]/route.ts` controla la apertura.
 - Las cuatro páginas de Cotizaciones comparten navegación y formulario. El shell y el layout protegido muestran la cuenta y los roles en el encabezado. `require-app-user.ts` recupera los códigos de rol. `next.config.ts` admite el cuerpo de la subida conservando Cache Components.
 - Pruebas en `tests/unit/seguimiento.test.ts`, `tests/integration/database.test.mjs`, `tests/e2e/cotizaciones.spec.ts` y `tests/e2e/editor-local.spec.ts` con su fixture en `tests/e2e/fixtures/editor.jsx`. `playwright.config.ts` admite un puerto local de pruebas mediante `E2E_PORT`.
 
-En un despliegue autorizado, comprobar el proyecto y el historial con la CLI autenticada, ejecutar `supabase db push --dry-run --skip-vault --remote=bxcxxhcnqoedfhhcyrlp` y comprobar que solo figura la migración V2. Aplicar primero la migración y después desplegar la aplicación. Comparar conteos, folios, horas e importes previos y posteriores. La migración no incluye el seed. En esta sesión el dry-run remoto de la CLI requirió un token ausente. El proyecto, esquema e historial se inspeccionaron por el conector Supabase.
+Para instalar en otro entorno, comprobar proyecto e historial con la CLI autenticada y usar `supabase db push --dry-run --skip-vault --remote=<referencia>` antes del push. En DAB 2.0 el conector ya registró V2. La instalación de la aplicación es independiente del cambio de base. El seed ficticio requiere autorización aparte.
 
 ## Verificación manual en una instancia con V2
 
