@@ -5,6 +5,8 @@ test("sin sesión no se puede abrir ninguna ruta comercial", async ({
   for (const path of [
     "/cotizaciones",
     "/cotizaciones/nueva",
+    "/proyectos",
+    "/proyectos/10000000-0000-4000-8000-000000000001",
     "/cotizaciones/10000000-0000-4000-8000-000000000001",
     "/cotizaciones/10000000-0000-4000-8000-000000000001/editar",
   ]) {

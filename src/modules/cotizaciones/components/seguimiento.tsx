@@ -33,6 +33,21 @@ export function Seguimiento({
       className="space-y-4 rounded-xl border bg-background p-5"
     >
       <h2 className="font-semibold">Seguimiento</h2>
+      {[
+        "aprobada",
+        "aprobada_po",
+        "aprobada_sin_po",
+        "facturada",
+        "pagada",
+      ].includes(cot.estado) && (
+        <p className="rounded-lg bg-muted p-3 text-sm">
+          {cot.cotizacion_documentos.some((d) =>
+            ["aprobacion", "po"].includes(d.tipo),
+          )
+            ? "Project Monitor dispone de la evidencia para la incorporación."
+            : "Project Monitor · Por documentar. Registra aquí la aprobación escrita o la PO para habilitar la incorporación."}
+        </p>
+      )}
       {resultado.error && <p role="alert">{resultado.error}</p>}
       {permitido ? (
         <form

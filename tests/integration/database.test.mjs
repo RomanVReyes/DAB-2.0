@@ -62,7 +62,7 @@ before(async () => {
     CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     GRANT USAGE ON SCHEMA auth TO authenticated,anon; GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated,anon;`);
   for (const file of (await readdir("supabase/migrations"))
-    .filter((f) => f.endsWith(".sql") && !f.endsWith("_cotizaciones_v2.sql"))
+    .filter((f) => f.endsWith(".sql") && f < "20261126144225")
     .sort())
     await db.exec(await readFile(`supabase/migrations/${file}`, "utf8"));
   await db.exec(await readFile("supabase/seed.sql", "utf8"));
@@ -110,6 +110,12 @@ before(async () => {
       "utf8",
     ),
   );
+  for (const file of (await readdir("supabase/migrations"))
+    .filter(
+      (f) => f.endsWith(".sql") && f > "20261126144225_cotizaciones_v2.sql",
+    )
+    .sort())
+    await db.exec(await readFile("supabase/migrations/" + file, "utf8"));
   legado = { id, original, migrado: await consultar() };
 });
 after(async () => db.close());
@@ -613,4 +619,70 @@ test("migración sobre un borrador V1 conserva precios, horas e identificadores"
   ).rows[0];
   assert.equal(event.resumen.partidas.length, 2);
   assert.equal(event.resumen.proyecto, "Borrador anterior a V2");
+});
+
+test("Project Monitor incorpora una sola vez y respeta roles y alcance", async () => {
+  const id = await save(adm, {
+    ...input,
+    partidas: [
+      {
+        ...input.partidas[0],
+        modo: "directo",
+        precio: "35",
+        horas: "0",
+        tarifa_id: undefined,
+      },
+    ],
+  });
+  const incorporar = (user) =>
+    asUser(user, "select public.pm_incorporar($1,'proyecto') id", [id]);
+  await track(adm, id, 1, { estado: "aprobada" });
+  await assert.rejects(incorporar(adm));
+  await track(adm, id, 2, {
+    tipo: "po",
+    enlace: "https://drive.google.com/file/d/test/view",
+  });
+  await assert.rejects(incorporar(viewer));
+  await incorporar(adm);
+  await incorporar(adm);
+  const rows = (user) =>
+    asUser(user, "select * from public.proyectos where id=$1", [id]);
+  assert.equal((await rows(viewer)).rows.length, 1);
+  assert.equal((await rows(tm)).rows.length, 0);
+  const line = (
+    await asUser(
+      adm,
+      "select * from public.proyecto_partidas where proyecto_id=$1",
+      [id],
+    )
+  ).rows[0];
+  assert.equal(Number(line.horas), 0);
+  assert.equal(line.departamento_id, null);
+  const dept = (
+    await asUser(adm, "select id from public.departamentos_operativos limit 1")
+  ).rows[0].id;
+  await asUser(adm, "select public.pm_clasificar($1,$2,'Diseño')", [
+    line.id,
+    dept,
+  ]);
+  await db.query(
+    "insert into public.usuario_roles(usuario_id,rol_id) select $1,id from public.roles where codigo='TL'",
+    [tm],
+  );
+  assert.equal((await rows(tm)).rows.length, 0);
+  await db.query("insert into public.usuario_departamentos values($1,$2)", [
+    tm,
+    dept,
+  ]);
+  assert.equal((await rows(tm)).rows.length, 1);
+  assert.equal(
+    (
+      await asUser(
+        adm,
+        "select * from public.proyecto_auditoria where proyecto_id=$1",
+        [id],
+      )
+    ).rows.length,
+    2,
+  );
 });

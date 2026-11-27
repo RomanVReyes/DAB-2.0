@@ -91,6 +91,7 @@ export async function seguimientoAction(
             ? error.message
             : "No se pudo guardar el seguimiento.",
     };
+  revalidatePath("/proyectos");
   revalidatePath("/cotizaciones");
   revalidatePath("/cotizaciones/" + id);
   return {};
